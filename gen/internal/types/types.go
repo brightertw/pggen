@@ -97,6 +97,8 @@ type Info struct {
 	// A flag indicating that this TypeInfo is for an enum. Not for use by
 	// templates, only for handling arrays of enums.
 	isEnum bool
+	// The name of the type when its a SQL primary key and used as keys in a Golang map
+	PrimaryKeyMapKeyName string
 }
 
 func (r *Resolver) TypeInfoOf(pgTypeName string) (*Info, error) {
@@ -182,20 +184,27 @@ func (r *Resolver) initTypeTable(overrides []config.TypeOverride) (err error) {
 
 		info, inMap := r.pgType2GoType[override.PgTypeName]
 		if inMap {
+			// Must copy `*info` before mutating
+			// since the user could be overriding a shared GoTypeInfo
+			// e.g. pgType2GoType["numeric"] -> &stringGoTypeInfo
+			// e.g. pgType2GoType["text"] -> &stringGoTypeInfo
+			// A type override for `numeric` must not change the GoTypeInfo for `text`.
+			infoO := *info
 			if len(override.TypeName) > 0 {
-				info.Name = override.TypeName
+				infoO.Name = override.TypeName
 			}
 			if len(override.NullableTypeName) > 0 {
-				info.NullName = "*" + override.TypeName
-				info.ScanNullName = override.NullableTypeName
-				info.NullConvertFunc = convertFunc
+				infoO.NullName = "*" + override.TypeName
+				infoO.ScanNullName = override.NullableTypeName
+				infoO.NullConvertFunc = convertFunc
 			}
 			if len(override.Pkg) > 0 {
-				info.Pkg = override.Pkg
+				infoO.Pkg = override.Pkg
 			}
 			if len(override.NullPkg) > 0 {
-				info.NullPkg = override.NullPkg
+				infoO.NullPkg = override.NullPkg
 			}
+			r.pgType2GoType[override.PgTypeName] = &infoO
 		} else {
 			if len(override.TypeName) == 0 ||
 				len(override.NullableTypeName) == 0 {
@@ -427,6 +436,9 @@ var byteArrayGoTypeInfo Info = Info{
 	NullSqlReceiver: refWrap,
 	SqlArgument:     idWrap,
 	NullSqlArgument: idWrap,
+	// For `bytea` primary keys, generate `map[string]` instead of `map[[]byte]` for Golang
+	// code that uses the primary key values as keys in a map
+	PrimaryKeyMapKeyName: "string",
 }
 
 var primitveGoTypes = map[string]bool{
