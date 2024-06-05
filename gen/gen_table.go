@@ -64,12 +64,19 @@ func (g *Generator) genTable(
 	if !ok {
 		return fmt.Errorf("could not get schema info about table '%s'", table.Name)
 	}
+	// fmt.Fprintf(os.Stderr, "tableInfo: %#v\n", tableInfo)
 
 	genCtx := tableGenCtxFromInfo(tableInfo)
 	if genCtx.PkeyCol == nil {
 		err = fmt.Errorf("no primary key for table")
 		return
 	}
+	if genCtx.PkeyCol.TypeInfo.PrimaryKeyMapKeyName == "" {
+		// If PrimaryKeyMapKeyName is not specified for the type,
+		// use TypeInfo.Name instead of TypeInfo.NullName since the primary key cannot be NULL
+		genCtx.PkeyCol.TypeInfo.PrimaryKeyMapKeyName = genCtx.PkeyCol.TypeInfo.Name
+	}
+	// fmt.Fprintf(os.Stderr, "genCtx: %#v\n", genCtx)
 
 	if tableInfo.HasUpdatedAtField || tableInfo.HasCreatedAtField {
 		g.imports[`"time"`] = true
@@ -982,17 +989,17 @@ func (p *pgClientImpl) impl{{ .GoName }}BulkFillIncludes(
 
 	loadedTab, inMap := loadedRecordTab[` + "`" + `{{ .PgName }}` + "`" + `]
 	if inMap {
-		idToRecord := loadedTab.(map[{{ .PkeyCol.TypeInfo.Name }}]*{{ .GoName }})
+		idToRecord := loadedTab.(map[{{ .PkeyCol.TypeInfo.PrimaryKeyMapKeyName }}]*{{ .GoName }})
 		for _, r := range recs {
-			_, alreadyLoaded := idToRecord[r.{{ .PkeyCol.GoName }}]
+			_, alreadyLoaded := idToRecord[{{ .PkeyCol.TypeInfo.PrimaryKeyMapKeyName }}(r.{{ .PkeyCol.GoName }})]
 			if !alreadyLoaded {
-				idToRecord[r.{{ .PkeyCol.GoName }}] = r
+				idToRecord[{{ .PkeyCol.TypeInfo.PrimaryKeyMapKeyName }}(r.{{ .PkeyCol.GoName }})] = r
 			}
 		}
 	} else {
-		idToRecord := make(map[{{ .PkeyCol.TypeInfo.Name }}]*{{ .GoName }}, len(recs))
+		idToRecord := make(map[{{ .PkeyCol.TypeInfo.PrimaryKeyMapKeyName }}]*{{ .GoName }}, len(recs))
 		for _, r := range recs {
-			idToRecord[r.{{ .PkeyCol.GoName }}] = r
+			idToRecord[{{ .PkeyCol.TypeInfo.PrimaryKeyMapKeyName }}(r.{{ .PkeyCol.GoName }})] = r
 		}
 		loadedRecordTab[` + "`" + `{{ .PgName }}` + "`" + `] = idToRecord
 	}
